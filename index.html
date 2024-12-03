@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Test Recorder</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        
+        .container {
+            text-align: center;
+        }
+        
+        video {
+            margin-top: 20px;
+            border: 1px solid #ccc;
+        }
+        
+        .loader {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Instruction Screen -->
+        <div id="instructionScreen">
+            <h1>Instructions</h1>
+            <p>Click "Start Test" to begin the test recording process. Make sure to allow permission for screen sharing and audio.</p>
+            <button onclick="startTest()">Start Test</button>
+        </div>
+
+        <!-- Permission Check Screen -->
+        <div id="permissionScreen" style="display:none;">
+            <h1>Requesting Permissions</h1>
+            <p>Please allow access to your microphone and screen.</p>
+        </div>
+
+        <!-- Question Screen with Audio -->
+        <div id="questionScreen" style="display:none;">
+            <h1>Question</h1>
+            <audio id="questionAudio" controls>
+                <source src="question_audio.mp3" type="audio/mp3">
+                Your browser does not support the audio element.
+            </audio>
+            <br><br>
+            <button onclick="startRecording()">Start Recording Answer</button>
+        </div>
+
+        <!-- Answer Recording Screen with Video Frame -->
+        <div id="recordingScreen" style="display:none;">
+            <h1>Recording Your Answer</h1>
+            <video id="recordedVideo" width="700" height="400" controls></video>
+            <br>
+            <button onclick="stopRecording()">Stop Recording</button>
+        </div>
+
+        <!-- Loader Screen -->
+        <div id="loaderScreen" class="loader">
+            <p>Loading...</p>
+        </div>
+
+        <!-- Test Completion Screen -->
+        <div id="completionScreen" style="display:none;">
+            <h1>Test Completed!</h1>
+            <p>Your answer has been recorded. Thank you!</p>
+        </div>
+    </div>
+
+    <script>
+        let stream;
+        let mediaRecorder;
+        let videoChunks = [];
+        let audioChunks = [];
+        let videoElement = document.getElementById("recordedVideo");
+        let questionAudio = document.getElementById("questionAudio");
+
+        // Function to start the test
+        const startTest = async() => {
+            document.getElementById("instructionScreen").style.display = "none";
+            document.getElementById("permissionScreen").style.display = "block";
+
+            try {
+                // Requesting media permissions
+                await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: true
+                });
+                await navigator.mediaDevices.getDisplayMedia({
+                    video: true
+                });
+                document.getElementById("permissionScreen").style.display = "none";
+                document.getElementById("questionScreen").style.display = "block";
+            } catch (err) {
+                alert("Permissions denied or unavailable.");
+                console.error(err);
+            }
+        };
+
+        // Function to start recording
+        const startRecording = async() => {
+            document.getElementById("questionScreen").style.display = "none";
+            document.getElementById("recordingScreen").style.display = "block";
+            document.getElementById("loaderScreen").style.display = "block";
+
+            // Start capturing audio and video
+            const videoStream = await navigator.mediaDevices.getDisplayMedia({
+                video: true
+            });
+            const audioStream = await navigator.mediaDevices.getUserMedia({
+                audio: true
+            });
+
+            stream = new MediaStream([
+                ...videoStream.getTracks(),
+                ...audioStream.getTracks()
+            ]);
+
+            mediaRecorder = new MediaRecorder(stream);
+
+            mediaRecorder.ondataavailable = (event) => {
+                videoChunks.push(event.data);
+                if (event.data.type.startsWith("audio/")) {
+                    audioChunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                document.getElementById("loaderScreen").style.display = "none";
+                videoElement.src = URL.createObjectURL(new Blob(videoChunks, {
+                    type: "video/webm"
+                }));
+                sendChunksToAPI(videoChunks, audioChunks);
+                document.getElementById("completionScreen").style.display = "block";
+            };
+
+            mediaRecorder.start();
+        };
+
+        // Function to stop recording
+        const stopRecording = () => {
+            mediaRecorder.stop();
+            stream.getTracks().forEach(track => track.stop());
+        };
+
+        // Function to send recorded chunks to API
+        const sendChunksToAPI = (videoChunks, audioChunks) => {
+            // Example API call (you'll need to implement your own API)
+            const formData = new FormData();
+            formData.append("video", new Blob(videoChunks, {
+                type: "video/webm"
+            }));
+            formData.append("audio", new Blob(audioChunks, {
+                type: "audio/webm"
+            }));
+
+            fetch("https://your-api-endpoint.com/upload", {
+                    method: "POST",
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => console.log("Upload Success:", data))
+                .catch(error => console.error("Upload Error:", error));
+        };
+    </script>
+</body>
+
+</html>
